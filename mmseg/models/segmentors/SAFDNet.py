@@ -53,7 +53,37 @@ class CustomDistance:
         ssim_value = ((2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)) / ((mu1 ** 2 + mu2 ** 2 + C1) * (sigma1 + sigma2 + C2))
 
         return ssim_value
+    
+    def mutual_info(self, img1, img2, window_size=3, eps=1e-6):
+        """
+        计算两个窗口之间的SSIM。
 
+        参数:
+        img1 (Tensor): 第一个窗口，形状为 (batch_size, channels, height, width)
+        img2 (Tensor): 第二个窗口，形状为 (batch_size, channels, height, width)
+        window_size (int): 窗口大小
+        C1, C2 (float): SSIM公式中的常数
+
+        返回:
+        ssim_value (Tensor): SSIM值，形状为 (batch_size, 1, height, width)
+        """
+        # 计算均值
+        mu1 = F.avg_pool2d(img1, window_size, stride=1, padding=self.padding)
+        mu2 = F.avg_pool2d(img2, window_size, stride=1, padding=self.padding)
+
+        # 计算方差
+        sigma1 = F.avg_pool2d((img1 - mu1) ** 2, window_size, stride=1, padding=self.padding)
+        sigma2 = F.avg_pool2d((img2 - mu2) ** 2, window_size, stride=1, padding=self.padding)
+        sigma12 = F.avg_pool2d((img1 - mu1) * (img2 - mu2), window_size, stride=1, padding=self.padding)
+
+        # 计算相关系数的平方（避免除零）
+        rho_sq = (sigma12 ** 2) / (sigma1 * sigma2 + eps)
+        
+        # 计算互信息（基于高斯假设）
+        mi_value = -0.5 * torch.log(1 - rho_sq + eps)
+
+        return mi_value
+    
     def structural_similarity_distance(self, img1, img2):
         # 确保输入张量具有相同的形状
         assert img1.shape == img2.shape, "Input images must have the same shape"
@@ -201,7 +231,7 @@ class style_self_muldiff_Net(nn.Module):
 
         return (equalized_imgA, equalized_imgB)
 
-    def diff_cal(self, list_img, fused_img, custom_distance):
+    def diff_cal(self, list_img, fused_img):
         change_map = []
         # 创建 CustomDistance 实例
         # custom_distance = CustomDistance(window_size=3)
@@ -259,10 +289,38 @@ class style_self_muldiff_Net(nn.Module):
 
         return normalized_distances
     
+    def mutual_infor_distance(self, img1, img2, window_size, eps=1e-6):
+        pad_size = (window_size-1) // 2
+        # 计算均值
+        mu1 = F.avg_pool2d(img1, window_size, stride = 1, padding = pad_size)
+        mu2 = F.avg_pool2d(img2, window_size, stride = 1, padding = pad_size)
+        # 计算方差
+        sigma1 = F.avg_pool2d((img1 - mu1) ** 2, window_size, stride=1, padding=pad_size)
+        sigma2 = F.avg_pool2d((img2 - mu2) ** 2, window_size, stride=1, padding=pad_size)
+        sigma12 = F.avg_pool2d((img1 - mu1) * (img2 - mu2), window_size, stride=1, padding=pad_size)
+
+        # 计算相关系数的平方（避免除零）
+        rho_sq = (sigma12 ** 2) / (sigma1 * sigma2 + eps)
+        
+        # 计算互信息（基于高斯假设）
+        mi_value = -0.5 * torch.log(1 - rho_sq + eps)
+        
+        # 在第二个维度（通道维度）上取平均
+        mi_values = torch.mean(mi_value, dim=1, keepdim=True)
+        # 计算结构相似性距离
+        distances = 1 - mi_values
+        # 归一化距离
+        max_distance = torch.max(distances)
+        normalized_distances = torch.sigmoid(distances / max_distance)
+
+        return normalized_distances
+    
     def multi_dist(self, img1, img2, level):
         dist_1 = self.euclidean_distance(img1, img2)
-        dist_3 = self.structural_similarity_distance(img1, img2, 3)
-        dist_5 = self.structural_similarity_distance(img1, img2, 5)
+        # dist_3 = self.structural_similarity_distance(img1, img2, 3)
+        # dist_5 = self.structural_similarity_distance(img1, img2, 5)
+        dist_3 = self.mutual_infor_distance(img1, img2, 3)
+        dist_5 = self.mutual_infor_distance(img1, img2, 5)
 
         dist = self.weights_list[level][0] * dist_1 + self.weights_list[level][1] * dist_3 + self.weights_list[level][2] * dist_5
 
@@ -298,9 +356,9 @@ class style_self_muldiff_Net(nn.Module):
         fused_B_list = list(self.fpn_fuse_B(fused_B_list))
         fused_A_list,fused_B_list = self.change_feature(fused_A_list, fused_B_list)
         # 创建 CustomDistance 实例
-        custom_distance = CustomDistance(window_size=3)
-        change_map_A = self.diff_cal(outA_list, fused_A_list, custom_distance)
-        change_map_B = self.diff_cal(outB_list, fused_B_list, custom_distance)
+        # custom_distance = CustomDistance(window_size=3)
+        change_map_A = self.diff_cal(outA_list, fused_A_list)
+        change_map_B = self.diff_cal(outB_list, fused_B_list)
 
         change_map = [torch.cat([change_A, change_B], dim = 1) for change_A, change_B in zip(change_map_A, change_map_B)]
         change_map = list(self.fpn_diff(change_map))
