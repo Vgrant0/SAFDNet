@@ -315,12 +315,43 @@ class style_self_muldiff_Net(nn.Module):
 
         return normalized_distances
     
+    def cosine_similarity_distance(self, img1, img2, window_size, eps=1e-6):
+        pad_size = (window_size - 1) // 2
+        
+        # 计算局部窗口的点积
+        prod = img1 * img2
+        sum_prod = F.avg_pool2d(prod, window_size, stride=1, padding=pad_size) * (window_size**2)  # 反平均化
+        
+        # 计算各张图的L2范数
+        img1_sq = F.avg_pool2d(img1**2, window_size, stride=1, padding=pad_size) * (window_size**2)
+        img2_sq = F.avg_pool2d(img2**2, window_size, stride=1, padding=pad_size) * (window_size**2)
+        
+        # 计算分母项
+        norm1 = torch.sqrt(img1_sq + eps)
+        norm2 = torch.sqrt(img2_sq + eps)
+        
+        # 计算余弦相似度 (范围[-1, 1])
+        cosine_sim = sum_prod / (norm1 * norm2 + eps)
+
+        mi_values = torch.mean(cosine_sim, dim=1, keepdim=True)
+        
+        # 转换为距离 (范围[0, 2])
+        distances = 1 - mi_values
+        
+        # 归一化到[0, 1]
+        max_distance = torch.max(distances)
+        normalized_distances = torch.sigmoid(distances / max_distance)
+
+        return normalized_distances
+
     def multi_dist(self, img1, img2, level):
         dist_1 = self.euclidean_distance(img1, img2)
         # dist_3 = self.structural_similarity_distance(img1, img2, 3)
         # dist_5 = self.structural_similarity_distance(img1, img2, 5)
         dist_3 = self.mutual_infor_distance(img1, img2, 3)
         dist_5 = self.mutual_infor_distance(img1, img2, 5)
+        # dist_3 = self.cosine_similarity_distance(img1, img2, 3)
+        # dist_5 = self.cosine_similarity_distance(img1, img2, 5)
 
         dist = self.weights_list[level][0] * dist_1 + self.weights_list[level][1] * dist_3 + self.weights_list[level][2] * dist_5
 
