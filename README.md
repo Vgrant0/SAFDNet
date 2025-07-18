@@ -16,14 +16,32 @@ pip install einops
 pip install timm
 pip install kornia
 
-### 思路
-设计了一个用于遥感图像变化检测的网络结构，主要优化方式围绕双时相图像的风格展开。首先使用一个共享参数的densenet121骨干网络进行特征提取，得到双时相四个尺度下的特征图，然后基于直方图均衡化思想分别对每个时相的特征图金字塔进行风格统一化。在这之后设计了一个融合自差异计算模块，基于自监督学习的思想出发，首先将两个时相的特征金字塔进行特征交互，然后计算三种差异，分别是每个时相融合前后的差异，以及融合后两个时相的差异，将三个差异进行可学习的加权融合。另外，差异的计算方式也有所改进，使用的是多尺度的SSIM相似性计算加权模块而不是传统的欧式距离。
+### Hist-Equal Module
+A style alignment module (Hist-Equal) inspired by histogram equalization is proposed. This module recalibrates feature maps based on their frequency information to align the styles of bitemporal images. This approach reduces false alarms caused by stylistic differences (pseudo-changes) from varying imaging conditions, without significantly increasing the model's complexity as seen in GAN-based methods
 
-### 直方图均衡化的思想
-Kornia库虽然提供了直方图均衡化，但是仅针对图像变为tensor在GPU上利用矩阵计算进行，并没有适配到特征图上，所以本研究的主要工作之一是将直方图均衡化匹配到特征图层级，并以此为基本思想设计以一个特征对齐模块，用来削弱双时相特征图中伪变化的特征。
+### Fusion-Difference
+A novel fusion-difference calculation module (Fusion-Diff) is designed, which replaces traditional cross-temporal difference calculation with a "consistency difference" approach. It evaluates the differences for each temporal image before and after feature fusion with the other temporal image. This method effectively suppresses pseudo-changes caused by non-target objects while still capturing real changes.
 
-### 融合自相似模块
-参考cyclegan中的循环一致性损失，构建了一种差异度量方式，除了传统的XA与XB的差异，还融入了单时相混合前混合后的差异度量，进一步削弱了风格的影响
+### Multi-SSIM
+A multi-scale Structure Similarity Index Measure (SSIM) is introduced as a difference metric, replacing conventional distance measures. This method calculates differences within local windows at multiple scales instead of pixel by pixel. This design enhances robustness against noise and improves the model's ability to detect structural differences across targets of various sizes。
 
-### 多尺度差异度量
-优化了之前SSIM遇到8*8等小尺寸特征图的缺陷，构建了多尺度度量的差异衡量方式
+## Citation 
+
+ If you use this code for your research, please cite our papers.  
+
+```
+@ARTICLE{11050962,
+  author={Fu, Siming and Dong, Sijun and Meng, Xiaoliang},
+  journal={IEEE Transactions on Geoscience and Remote Sensing}, 
+  title={Beyond Cross-Temporal Difference: Style-Aligned and Fusion-Difference Learning for Change Detection}, 
+  year={2025},
+  volume={63},
+  number={},
+  pages={1-15},
+  keywords={Feature extraction;Remote sensing;Generative adversarial networks;Translation;Noise;Data mining;Accuracy;Transformers;Indexes;Histograms;Change detection;differential feature;pseudo-change;structural similarity index;style alignment},
+  doi={10.1109/TGRS.2025.3583166}}
+
+```
+## Acknowledgments
+
+ Our code is inspired and revised by [open-mmlab/mmsegmentation](https://github.com/open-mmlab/mmsegmentation),  [timm](https://github.com/huggingface/pytorch-image-models). Thanks  for their great work!!  
